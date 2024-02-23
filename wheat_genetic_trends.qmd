@@ -421,8 +421,8 @@ mt_mod <- asreml(fixed = prd_val~var,
                  residual= ~units:var, 
                  na.action = na.method(y='include', x='include'), 
                  asmv=var, data=blues.na, weights=wt,
-                 workspace='1gb')
-mt_mod <- update(mt_mod)
+                 workspace="1gb")
+#mt_mod <- update(mt_mod)
 ```
 
 Extract variance components
@@ -516,7 +516,7 @@ corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE,
 #### Data
 
 ```{r}
-blues_1st_yrs <- blues.na |>
+blues_1st3yrs <- blues.na |>
   filter(year_n <2004) |>
   glimpse()
 ```
@@ -531,9 +531,7 @@ mt_mod_1st3yr <- asreml(fixed = prd_val~var,
                  family=asr_gaussian(dispersion = 1),
                  residual= ~units:var, 
                  na.action = na.method(y='include', x='include'), 
-                 asmv=var, data=blues_1st_yrs, weights=wt,
-                 workspace='1gb')
-mt_mod <- update(mt_mod)
+                 asmv=var, data=blues_1st3yrs, weights=wt)
 ```
 
 Extract variance components
@@ -547,7 +545,7 @@ var <- as.vector(unique(blues.na$var))
 
 
 mat_varcomp <- 
-  as.data.frame(summary(mt_mod)$varcomp) |> # Get variance components
+  as.data.frame(summary(mt_mod_1st3yr)$varcomp) |> # Get variance components
   dplyr::select(component) |>  # Select the column containing the variance components
   rownames_to_column('varcomp') |>  # Convert row names to a separate column
   filter(str_detect(varcomp, paste(var, collapse = '|'))) |>  # Filter rows that contain variables
@@ -622,6 +620,112 @@ corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE,
 ```
 
 ### Last 3yrs
+
+#### Data
+
+```{r}
+blues_lst3yrs <- blues.na |>
+  filter(year_n >2018) |>
+  glimpse()
+```
+
+#### Model
+
+Multi-trait model for the genetic correlations among traits
+
+```{r}
+mt_mod_lst3yr <- asreml(fixed = prd_val~var,
+                 random = ~us(var):gen + env:var + gen:env:var,
+                 family=asr_gaussian(dispersion = 1),
+                 residual= ~units:var, 
+                 na.action = na.method(y='include', x='include'), 
+                 asmv=var, data=blues_lst3yrs, weights=wt)
+```
+
+Extract variance components
+
+
+Convert variance components into a matrix
+
+```{r}
+# Extract unique variables
+var <- as.vector(unique(blues.na$var)) 
+
+
+mat_varcomp <- 
+  as.data.frame(summary(mt_mod_lst3yr)$varcomp) |> # Get variance components
+  dplyr::select(component) |>  # Select the column containing the variance components
+  rownames_to_column('varcomp') |>  # Convert row names to a separate column
+  filter(str_detect(varcomp, paste(var, collapse = '|'))) |>  # Filter rows that contain variables
+  mutate(varcomp=str_replace_all(varcomp,'var:gen!var_','')) |>  # Replace specific patterns
+  separate(varcomp, c('var1','var2'),sep = ':') |>  # Split the 'varcomp' column into two separate columns
+  spread(var2,component) |>  # Spread the 'component' values into separate columns
+  column_to_rownames('var1') |>  # Use 'var1' column as row names
+  as.matrix() |>  # Convert the resulting data frame to a matrix
+  t()  # Transpose the matrix
+
+mat_varcomp
+```
+
+Function to calculate genetic correlations from the matrix of variance components
+
+```{r}
+# Function to calculate genetic correlations
+calc_gen_corr <- function(mat) {
+  # Get the number of rows in the matrix
+  n <- nrow(mat)  
+  # Create a square matrix to store the genetic correlations, initialized with 1's
+  genetic_corr_mat <- matrix(1, nrow = n, ncol = n,  
+                             dimnames = list(rownames(mat), colnames(mat)))  # Set the row and column names
+  
+  for (i in 1:(n - 1)) {  # Loop over the rows of the matrix (excluding the last row)
+    for (j in (i + 1):n) {  # Loop over the columns of the matrix starting from i+1 to n
+      
+      genetic_corr <- mat[i, j] / (sqrt(mat[i, i]) * sqrt(mat[j, j]))  # Calculate the genetic correlation
+      # Assign the calculated genetic correlation to the corresponding cell in the upper triangle of the matrix
+      genetic_corr_mat[i, j] <- genetic_corr
+      # Assign the same value to the corresponding cell in the lower triangle of the matrix
+      genetic_corr_mat[j, i] <- genetic_corr
+    }
+  }
+  return(genetic_corr_mat)  # Return the matrix containing the genetic correlations
+}
+
+# Calculate genetic correlations
+genetic_corr <- calc_gen_corr(mat_varcomp)  # Call the function with the input matrix
+genetic_corr
+```
+
+
+#### Plot
+```{r}
+colnames(genetic_corr) <- c('Grain yield','Heading time',
+                            'Plant height','Test weight')
+rownames(genetic_corr) <- c('Grain yield','Heading time',
+                            'Plant height','Test weight')
+
+# Define a color palette transitioning from orange to blue
+my_palette <- colorRampPalette(c("#13294B", "white","#FF552E"))(n = 100)
+
+# Plot the correlation matrix with the specified color palette
+tiff("figures/gen_corr.tiff", width = 6, height = 4, units = "in", res = 320)
+corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
+         addgrid = FALSE, outline = "black",  
+         tl.cex = 1, tl.srt = 0, tl.col = "black", 
+         cl.cex = 1, cl.align.text = "l",
+         number.cex = 1,
+         diag = FALSE, mar = c(0.2, 0.2, 0.2, 0.2),
+         col = my_palette)
+dev.off()
+
+corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
+         addgrid = FALSE, outline = "black",  
+         tl.cex = 1, tl.srt = 0, tl.col = "black", 
+         cl.cex = 1, cl.align.text = "l",
+         number.cex = 1,
+         diag = FALSE, mar = c(0.2, 0.2, 0.2, 0.2),
+         col = my_palette)
+```
 
 ## Trend analysis
 
