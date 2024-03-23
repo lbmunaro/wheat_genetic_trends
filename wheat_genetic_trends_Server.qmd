@@ -1,5 +1,5 @@
 ---
-title: 'Genetic trends due to 21 years of winter wheat breeding at the University of Illinois'
+title: 'Genetic trends due to 21 years of winter wheat breeding in IL'
 author:
   - name: Lucas Berger Munaro
   - name: Jessica E. Rutkoski
@@ -28,7 +28,7 @@ library(kableExtra) # Create HTML Table
 library(corrplot) # A visualization of a correlation matrix
 library(ggtext) # Improved text rendering support for ggplot2
 asreml.options(trace=F, # Report convergence monitoring
-               maxit=250) # Maximum number of iterations
+               maxit=100) # Maximum number of iterations
 ```
 
 ## Phenotypic data
@@ -146,7 +146,8 @@ dat1l |>
         axis.text.y = element_text(size = 8),
         axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14), panel.grid = element_blank())
-ggsave("figures/traits_loc.png", width = 6.5, height = 4, units = "in", dpi=320)
+
+ggsave("figures/traits_loc.tiff", width = 6.5, height = 4, units = "in", dpi=320)
 ```
 
 ## Single trial analysis
@@ -251,7 +252,7 @@ out_blups  |>
         axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14),
         legend.position = 'none', panel.grid = element_blank())
-ggsave("figures/r2.png", width = 6, height = 4, units = "in", dpi=320)
+ggsave("figures/r2.tiff", width = 6, height = 4, units = "in", dpi=320)
 ```
 
 ### BLUE model
@@ -387,6 +388,95 @@ blues <- # long format df with blues and standard errors
 
 ## Genetic correlation among traits
 
+### Single year
+
+#### Data
+
+Include the NA's to the blues data set for the genetic correlation model
+
+```{r}
+blues.na <- blues |>
+  dplyr::select(-c(std_error,wt)) |> # filter out to make it easier to pivot wider
+  pivot_wider(values_from = prd_val, names_from = var) |> #pivot wider (add NA)
+  pivot_longer(names_to='var', values_to='prd_val',
+               cols=c(grain_yield:heading_time), 
+               values_drop_na = F) |> # pivot longer without dropping NA's
+  left_join(blues) |> # add back std_error and weights
+  mutate_if(is.character,as.factor) |>
+  arrange(var,env,gen) |>
+  glimpse()
+```
+```{r}
+load('data/wheat_genetic_trends.RData')
+```
+
+
+Create a list with data frames for each year
+
+```{r}
+# Create a list with a data.frame for each year
+list_of_data <- split(blues.na, f=blues.na$year)
+
+# Create an empty list to store results for each year
+genetic_corr_list <- list()
+
+# Iterate over each year of data
+for (i in 1:length(list_of_data)) {
+    # Extract the data for the current year
+    current_data <- list_of_data[[i]]
+    
+    # Fit the model
+    mt_mod <- asreml(
+        fixed = prd_val ~ var,
+        random = ~us(var):gen + env:var + gen:env:var,
+        family = asr_gaussian(dispersion = 1),
+        residual = ~units:var,
+        na.action = na.method(y = 'include', x = 'include'),
+        asmv = var,
+        data = current_data,
+        weights = wt)
+    
+    # Update the model if needed
+    mt_mod <- update(mt_mod)
+    
+    # Extract variance components as per your original code
+    var <- as.vector(unique(current_data$var))
+    mat_varcomp <- 
+      as.data.frame(summary(mt_mod)$varcomp) |>
+      dplyr::select(component) |>
+      rownames_to_column('varcomp') |>
+      filter(str_detect(varcomp, paste(var, collapse = '|'))) |>
+      mutate(varcomp = str_replace_all(varcomp, 'var:gen!var_', '')) |>
+      separate(varcomp, c('var1', 'var2'), sep = ':') |>
+      spread(var2, component) |>
+      column_to_rownames('var1') |>
+      as.matrix() |>
+      t()
+    
+    # Function to calculate genetic correlations as per your original code
+    calc_gen_corr <- function(mat) {
+      n <- nrow(mat)  
+      genetic_corr_mat <- matrix(1, nrow = n, ncol = n,  
+                                 dimnames = list(rownames(mat), colnames(mat)))
+      for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+          genetic_corr <- mat[i, j] / (sqrt(mat[i, i]) * sqrt(mat[j, j]))
+          genetic_corr_mat[i, j] <- genetic_corr
+          genetic_corr_mat[j, i] <- genetic_corr
+        }
+      }
+      return(genetic_corr_mat)
+    }
+    
+    # Calculate genetic correlations
+    genetic_corr <- calc_gen_corr(mat_varcomp)
+    
+    # Store genetic correlations for the current year in the list
+    genetic_corr_list[[i]] <- genetic_corr
+}
+```
+
+
 ### All years
 
 #### Data
@@ -420,8 +510,8 @@ mt_mod <- asreml(fixed = prd_val~var,
                  residual= ~units:var, 
                  na.action = na.method(y='include', x='include'), 
                  asmv=var, data=blues.na, weights=wt,
-                 workspace="1gb")
-#mt_mod <- update(mt_mod)
+                 workspace='1gb')
+mt_mod <- update(mt_mod)
 ```
 
 Extract variance components
@@ -490,7 +580,7 @@ rownames(genetic_corr) <- c('Grain yield','Heading time',
 my_palette <- colorRampPalette(c("#13294B", "white","#FF552E"))(n = 100)
 
 # Plot the correlation matrix with the specified color palette
-png("figures/gen_corr.png", width = 6, height = 4, units = "in", res = 320)
+tiff("figures/gen_corr.tiff", width = 6, height = 4, units = "in", res = 320)
 corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
          addgrid = FALSE, outline = "black",  
          tl.cex = 1, tl.srt = 0, tl.col = "black", 
@@ -599,7 +689,7 @@ rownames(genetic_corr) <- c('Grain yield','Heading time',
 my_palette <- colorRampPalette(c("#13294B", "white","#FF552E"))(n = 100)
 
 # Plot the correlation matrix with the specified color palette
-png("figures/gen_corr.png", width = 6, height = 4, units = "in", res = 320)
+tiff("figures/gen_corr.tiff", width = 6, height = 4, units = "in", res = 320)
 corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
          addgrid = FALSE, outline = "black",  
          tl.cex = 1, tl.srt = 0, tl.col = "black", 
@@ -707,7 +797,7 @@ rownames(genetic_corr) <- c('Grain yield','Heading time',
 my_palette <- colorRampPalette(c("#13294B", "white","#FF552E"))(n = 100)
 
 # Plot the correlation matrix with the specified color palette
-png("figures/gen_corr.png", width = 6, height = 4, units = "in", res = 320)
+tiff("figures/gen_corr.tiff", width = 6, height = 4, units = "in", res = 320)
 corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
          addgrid = FALSE, outline = "black",  
          tl.cex = 1, tl.srt = 0, tl.col = "black", 
@@ -948,7 +1038,7 @@ gt_dat |> filter(var=="grain_yield") |>
         axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14),
         legend.position = 'none', panel.grid = element_blank())
-ggsave("figures/gy.png", width = 6, height = 4, units = "in", dpi=320)
+ggsave("figures/gy.tiff", width = 6, height = 4, units = "in", dpi=320)
 ```
 ##### Test weight
 
@@ -975,7 +1065,7 @@ gt_dat |> filter(var=="test_weight") |>
         axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14),
         legend.position = 'none', panel.grid = element_blank())
-ggsave("figures/tw.png", width = 6, height = 4, units = "in", dpi=320)
+ggsave("figures/tw.tiff", width = 6, height = 4, units = "in", dpi=320)
 ```
 
 ##### Heading time
@@ -1003,7 +1093,7 @@ gt_dat |> filter(var=="heading_time") |>
         axis.title.x = element_text(size = 14),
         axis.title.y = element_text(size = 14),
         legend.position = 'none', panel.grid = element_blank())
-ggsave("figures/ht.png", width = 6, height = 4, units = "in", dpi=320)
+ggsave("figures/ht.tiff", width = 6, height = 4, units = "in", dpi=320)
 ```
 
 ### Tables
