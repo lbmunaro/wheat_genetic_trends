@@ -28,7 +28,7 @@ library(kableExtra) # Create HTML Table
 library(corrplot) # A visualization of a correlation matrix
 library(ggtext) # Improved text rendering support for ggplot2
 asreml.options(trace=F, # Report convergence monitoring
-               maxit=250) # Maximum number of iterations
+               maxit=50) # Maximum number of iterations
 ```
 
 ## Phenotypic data
@@ -599,7 +599,7 @@ rownames(genetic_corr) <- c('Grain yield','Heading time',
 my_palette <- colorRampPalette(c("#13294B", "white","#FF552E"))(n = 100)
 
 # Plot the correlation matrix with the specified color palette
-png("figures/gen_corr.png", width = 6, height = 4, units = "in", res = 320)
+png("figures/gen_corr_1st3yr.png", width = 6, height = 4, units = "in", res = 320)
 corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
          addgrid = FALSE, outline = "black",  
          tl.cex = 1, tl.srt = 0, tl.col = "black", 
@@ -707,7 +707,7 @@ rownames(genetic_corr) <- c('Grain yield','Heading time',
 my_palette <- colorRampPalette(c("#13294B", "white","#FF552E"))(n = 100)
 
 # Plot the correlation matrix with the specified color palette
-png("figures/gen_corr.png", width = 6, height = 4, units = "in", res = 320)
+png("figures/gen_corr_lst3yr.png", width = 6, height = 4, units = "in", res = 320)
 corrplot(genetic_corr, method = "color", type = "upper", addCoef.col = TRUE, 
          addgrid = FALSE, outline = "black",  
          tl.cex = 1, tl.srt = 0, tl.col = "black", 
